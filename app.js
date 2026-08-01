@@ -967,6 +967,7 @@ function toggleDieSparkle(idx) {
     renderGame(); 
 }
 
+// Update kpEnter to handle the new die structure and auto-advance
 function kpEnter() {
     if (!activeInputField || !keypadValue || keypadValue === '-') return;
     const rd = activeGame.rounds[activeGame.currentRound];
@@ -988,8 +989,6 @@ function kpEnter() {
     saveGame();
     renderGame();
 }
-
-
 
 // --- Render Engine ---
 function renderGame() {
@@ -1053,10 +1052,13 @@ function renderGame() {
             </div>`;
     }
 
+    // Replace the old diceRowsHtml declaration in renderGame with this:
     let diceRowsHtml = `
         <div class="grid grid-cols-1 gap-4 mb-4 animate-fadeIn">
             ${roundData.dice.map((die, idx) => renderDieTile(die, idx)).join('')}
-        </div>`; 
+        </div>`;
+    
+    // If you still need Expansion/Normal labels:
     if (roundNum === 1) {
         diceRowsHtml += `<div class="mt-8 text-center animate-fadeIn px-4"><div class="${isExpansion ? 'expansion-gradient' : 'text-slate-400'} text-5xl font-black uppercase tracking-tight">${isExpansion ? 'Expansion Pack<br>Edition' : 'Normal Game'}</div></div>`;
     }
@@ -1279,6 +1281,7 @@ function calculateRoundTotal(round) {
 
     let redCount = 0;
     const colorSums = {};
+
     // Group the normal dice by color 
     (round.dice || []).forEach(die => {
         if (die.value !== null && die.color !== null) {
@@ -1286,6 +1289,7 @@ function calculateRoundTotal(round) {
             if (die.color === 'red') redCount++;
         }
     });
+
     [...diceConfig.map(d => d.id), 'sage'].forEach(id => {
         let base = (colorSums[id] || 0) + (wildBonuses[id] || 0);
         
