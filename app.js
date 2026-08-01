@@ -851,16 +851,17 @@ function initGame(mode, suppressRender = false) {
         id: Date.now(), mode: mode,
         date: new Date().toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }), 
         currentRound: 0, 
-        rounds: Array(10).fill(null).map(() => ({ 
-            yellow: [], purple: [], blue: [], red: [], green: [], clear: [], pink: [], sage: [], 
-            wild: [], blueHasSparkle: false 
+        // Generates an array of dice objects equal to the round number (i + 1)
+        rounds: Array(10).fill(null).map((_, i) => ({ 
+            dice: Array.from({ length: i + 1 }, () => ({ value: null, color: null, sparkle: false })),
+            wild: [] 
         })) 
     }; 
     games.unshift(activeGame); 
     saveGame(); 
     if(!suppressRender) {
         renderGame();
-        setActiveInput('yellow');
+        setActiveDieInput(0); // Auto-focus the first die
     }
 }
 
@@ -897,6 +898,98 @@ function showResults() {
         <button onclick="showHome()" class="w-full bg-slate-800 py-5 rounded-3xl font-black text-xl text-white mb-6 shadow-lg">BACK TO HISTORY</button>
     </div>`;
 }
+// ------------
+// Newer Format
+// ------------
+// --- Tile UI Generator ---
+function renderDieTile(die, index) {
+    const selectedColorConfig = diceConfig.find(d => d.id === die.color);
+    const borderColor = selectedColorConfig ? selectedColorConfig.color : '#cbd5e1'; 
+    const isActive = activeInputField === `die-${index}`;
+
+    let html = `
+    <div onclick="setActiveDieInput(${index})" id="die-card-${index}" class="wild-card ${isActive ? 'active-input' : ''}" style="border-left: 8px solid ${borderColor}">
+        <div class="flex justify-between items-start">
+            <span class="text-[10px] font-black uppercase opacity-40">Die #${index + 1}</span>
+            <span class="text-3xl font-black wild-val-display">${die.value !== null ? die.value : '-'}</span>
+        </div>
+        <div class="color-picker-wheel mt-2">`;
+            
+    diceConfig.forEach(d => {
+        const isSelected = die.color === d.id;
+        html += `<div onclick="event.stopPropagation(); setDieColor(${index}, '${d.id}')" 
+                      class="wheel-item ${isSelected ? 'selected' : ''}" 
+                      style="background-color: ${d.color}"></div>`;
+    });
+
+    html += `</div>`;
+
+    // Conditionally render Sparkle Toggle for Blue
+    if (die.color === 'blue') {
+        const sparkleText = die.sparkle ? 'Sparkle Activated ✨' : 'Add Sparkle?';
+        const sparkleClass = die.sparkle ? 'sparkle-on' : 'sparkle-off';
+        
+        html += `
+        <div class="mt-3 pt-3 border-t border-black/5 animate-fadeIn">
+            <button onclick="event.stopPropagation(); toggleDieSparkle(${index})" class="sparkle-btn-full ${sparkleClass}">
+                ${sparkleText}
+            </button>
+        </div>`;
+    }
+    return html + `</div>`;
+}
+
+// --- Tile Interactions ---
+function setActiveDieInput(idx) {
+    activeInputField = `die-${idx}`;
+    document.querySelectorAll('.wild-card').forEach(c => c.classList.remove('active-input'));
+    const card = document.getElementById(`die-card-${idx}`);
+    if (card) card.classList.add('active-input');
+    
+    const die = activeGame.rounds[activeGame.currentRound].dice[idx];
+    const config = diceConfig.find(d => d.id === die.color) || { color: '#ffffff', text: '#000000' };
+    
+    updateKeypadTheme(config.color, config.text);
+    updateKpDisplay();
+}
+
+function setDieColor(idx, colorId) {
+    activeGame.rounds[activeGame.currentRound].dice[idx].color = colorId;
+    setActiveDieInput(idx); 
+    saveGame();
+    renderGame(); 
+}
+
+function toggleDieSparkle(idx) {
+    const die = activeGame.rounds[activeGame.currentRound].dice[idx];
+    die.sparkle = !die.sparkle;
+    saveGame();
+    renderGame(); 
+}
+
+function kpEnter() {
+    if (!activeInputField || !keypadValue || keypadValue === '-') return;
+    const rd = activeGame.rounds[activeGame.currentRound];
+    
+    if (activeInputField.startsWith('die-')) {
+        const idx = parseInt(activeInputField.split('-')[1]);
+        rd.dice[idx].value = parseFloat(keypadValue);
+        
+        // Auto-advance to the next die if one exists
+        if (idx + 1 < rd.dice.length) {
+            setActiveDieInput(idx + 1);
+        }
+    } else if (activeInputField.startsWith('wild-')) {
+        rd.wild[parseInt(activeInputField.split('-')[1])].value = parseFloat(keypadValue);
+    }
+    
+    kpClear(); 
+    updateAllDisplays(); 
+    saveGame();
+    renderGame();
+}
+
+
 
 // --- Render Engine ---
 function renderGame() {
@@ -960,9 +1053,14 @@ function renderGame() {
             </div>`;
     }
 
-    let diceRowsHtml = (roundNum === 1) 
-        ? `<div class="animate-fadeIn">${renderDiceRow(diceConfig[0], roundData)}</div><div class="mt-12 text-center animate-fadeIn px-4"><div class="${isExpansion ? 'expansion-gradient' : 'text-slate-400'} text-5xl font-black uppercase tracking-tight">${isExpansion ? 'Expansion Pack<br>Edition' : 'Normal Game'}</div></div>`
-        : diceConfig.map((dice, idx) => `<div class="animate-fadeIn">${renderDiceRow(dice, roundData)}</div>`).join('');
+    let diceRowsHtml = `
+        <div class="grid grid-cols-1 gap-4 mb-4 animate-fadeIn">
+            ${roundData.dice.map((die, idx) => renderDieTile(die, idx)).join('')}
+        </div>`; 
+    if (roundNum === 1) {
+        diceRowsHtml += `<div class="mt-8 text-center animate-fadeIn px-4"><div class="${isExpansion ? 'expansion-gradient' : 'text-slate-400'} text-5xl font-black uppercase tracking-tight">${isExpansion ? 'Expansion Pack<br>Edition' : 'Normal Game'}</div></div>`;
+    }
+    
      
     if (sageUnlocked && roundNum > 1) {
         diceRowsHtml += `<div class="mt-6 pt-6 border-t-4 border-yellow-500/20 animate-fadeIn">${renderDiceRow(sageDiceConfig, roundData)}</div>`;
@@ -1178,13 +1276,30 @@ function calculateRoundTotal(round) {
     let total = 0;
     const wildBonuses = {};
     (round.wild || []).forEach(w => { wildBonuses[w.target] = (wildBonuses[w.target] || 0) + (w.value || 0); });
+
+    let redCount = 0;
+    const colorSums = {};
+    // Group the normal dice by color 
+    (round.dice || []).forEach(die => {
+        if (die.value !== null && die.color !== null) {
+            colorSums[die.color] = (colorSums[die.color] || 0) + die.value;
+            if (die.color === 'red') redCount++;
+        }
+    });
     [...diceConfig.map(d => d.id), 'sage'].forEach(id => {
-        const vals = round[id] || [];
-        let base = (vals.reduce((a, b) => a + b, 0)) + (wildBonuses[id] || 0);
-        if (id === 'purple') total += (base * 2);
-        else if (id === 'blue' && round.blueHasSparkle) total += (base * 2);
-        else if (id === 'red') total += (base * vals.length);
-        else total += base;
+        let base = (colorSums[id] || 0) + (wildBonuses[id] || 0);
+        
+        if (id === 'purple') {
+            total += (base * 2);
+        } else if (id === 'blue') {
+            // Find if ANY blue die has a sparkle in this round to trigger the multiplier
+            const hasSparkle = (round.dice || []).some(d => d.color === 'blue' && d.sparkle);
+            total += hasSparkle ? (base * 2) : base; 
+        } else if (id === 'red') {
+            total += (base * redCount);
+        } else {
+            total += base;
+        }
     });
     return total;
 }
@@ -1193,13 +1308,6 @@ function kpInput(v) { keypadValue += v; updateKpDisplay(); }
 function kpClear() { keypadValue = ''; updateKpDisplay(); }
 function kpToggleNeg() { keypadValue = keypadValue.startsWith('-') ? keypadValue.substring(1) : (keypadValue ? '-' + keypadValue : '-'); updateKpDisplay(); }
 function updateKpDisplay() { const d = document.getElementById('active-input-display'); if (d) d.textContent = keypadValue || (activeInputField ? `Adding to ${activeInputField.toUpperCase()}` : '-'); }
-function kpEnter() {
-    if (!activeInputField || !keypadValue || keypadValue === '-') return;
-    const rd = activeGame.rounds[activeGame.currentRound];
-    if (activeInputField.startsWith('wild-')) rd.wild[parseInt(activeInputField.split('-')[1])].value = parseFloat(keypadValue);
-    else rd[activeInputField].push(parseFloat(keypadValue));
-    kpClear(); updateAllDisplays(); saveGame();
-}
 function removeVal(id, idx) { activeGame.rounds[activeGame.currentRound][id].splice(idx, 1); setActiveInput(id); updateAllDisplays(); saveGame(); }
 function saveGame() { localStorage.setItem('panda_games', JSON.stringify(games)); }
 function setTheme(t) { settings.theme = t; applySettings(); toggleMenu(); showHome(); }
