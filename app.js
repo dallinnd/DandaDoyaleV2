@@ -1,7 +1,12 @@
 // Supply the Firebase settings to enable multiplayer.
 const firebaseConfig = {
-    apiKey: '', authDomain: '', databaseURL: '', projectId: '',
-    storageBucket: '', messagingSenderId: '', appId: ''
+    apiKey: "AIzaSyConuxhGCtGvJaa6TZ1bkUvlOhhTdyTgZE",
+    authDomain: "flip7share.firebaseapp.com",
+    databaseURL: "https://flip7share-default-rtdb.firebaseio.com",
+    projectId: "flip7share",
+    storageBucket: "flip7share.firebasestorage.app",
+    messagingSenderId: "467127126520",
+    appId: "1:467127126520:web:0646f4fc19352eaa11ee0d"
 };
 let db = null;
 let getDatabase, ref, set, onValue, update, get;
