@@ -64,6 +64,34 @@ body {
 .keypad-area { height: 35%; position: relative; z-index: 50; background-color: var(--bg-keypad); border-top: 1px solid var(--border-ui); }
 .dice-row { background-color: var(--bg-card); transition: all 0.2s ease; border-left-width: 8px; }
 
+/* Color-by-color die entry */
+.score-summary { display: grid; gap: 10px; margin: 4px 0 24px; }
+.previous-yellow-stat, .grand-score-stat, .score-stat {
+    min-height: 58px; padding: 10px 14px; border: 1px solid var(--border-ui);
+    border-radius: 16px; display: flex; align-items: center; justify-content: space-between;
+    font-weight: 800;
+}
+.previous-yellow-stat { background: rgba(251, 191, 36, 0.08); border-color: #fbbf24; color: #facc15; }
+.previous-yellow-stat span, .grand-score-stat span, .score-stat span { font-size: 0.72rem; font-weight: 900; }
+.previous-yellow-stat strong, .grand-score-stat strong { font-size: 1.45rem; }
+.score-stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.score-stat { min-height: 82px; flex-direction: column; justify-content: center; gap: 2px; }
+.score-stat strong { font-size: 1.65rem; line-height: 1.1; }
+.score-stat-round { background: #fff; color: #0f172a; }
+.grand-score-stat { min-height: 58px; background: rgba(255,255,255,0.04); }
+.grand-score-stat strong { font-size: 1.55rem; }
+.color-dice-section { padding: 14px 12px; border: 1px solid var(--border-ui); border-left: 5px solid var(--die-color); border-radius: 18px; }
+.color-dice-section.active-input { background-color: color-mix(in srgb, var(--die-color) 12%, var(--bg-card)); border-color: var(--die-color); }
+.color-section-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--die-color); font-size: 1.05rem; }
+.color-section-total { font-size: 1.35rem; font-weight: 950; }
+.die-values-list { min-height: 38px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 0; }
+.die-value-chip { display: inline-flex; align-items: center; gap: 7px; padding: 5px 9px 5px 13px; border-radius: 999px; background: color-mix(in srgb, var(--die-color) 80%, white); color: #111827; font-size: 1.05rem; font-weight: 900; }
+.remove-die-value { width: 24px; height: 24px; border-radius: 50%; background: rgba(0,0,0,0.12); font-size: 1.05rem; line-height: 1; }
+.add-die-btn { min-height: 40px; padding: 6px 16px; border-radius: 999px; background: #cbd5e1; color: #0f172a; font-size: 0.95rem; font-weight: 800; }
+.color-section-actions { display: flex; align-items: center; gap: 8px; }
+.color-section-actions .sparkle-btn-full { width: auto; margin-top: 0; padding: 9px 12px; }
+body.light-theme .score-stat-round { background: #fff; }
+
 /* --- Navigation & UI --- */
 .nav-btn {
     width: 44px; height: 44px; border-radius: 50%;
@@ -154,3 +182,17 @@ body.light-theme .prev-total-box { background-color: #e2e8f0; color: #0f172a; bo
 .hidden { display: none !important; }
 .mp-row { display: flex; justify-content: space-between; align-items: center; padding: 16px; background: rgba(255,255,255,0.05); border: 1px solid var(--border-ui); border-radius: 16px; }
 .mp-row.submitted { background: rgba(22, 163, 74, 0.2); border-color: var(--color-score); }
+
+/* Color-specific die picker; the keypad remains available for wild dice. */
+.scroll-area { height: 100%; }
+.keypad-area { display: none !important; }
+#app.wild-entry-active .scroll-area { height: 65%; }
+#app.wild-entry-active .keypad-area { display: flex !important; }
+.die-picker-panel { width: min(90vw, 360px); max-height: 85vh; overflow-y: auto; padding: 18px; border-radius: 26px; background: var(--picker-color); color: #111827; }
+.die-picker-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.die-picker-header h2 { font-size: 1rem; font-weight: 900; }
+.die-picker-header button { width: 40px; height: 40px; border-radius: 50%; background: rgba(0,0,0,.16); font-size: 1.6rem; line-height: 1; }
+.die-picker-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.die-picker-grid button { min-height: 52px; border-radius: 999px; background: #0f172a; color: white; font-size: 1.15rem; font-weight: 900; }
+.die-picker-cancel { display: block; margin: 14px auto 0; padding: 8px 20px; font-weight: 800; }
+.die-picker-panel button:focus-visible { outline: 3px solid white; outline-offset: 2px; }

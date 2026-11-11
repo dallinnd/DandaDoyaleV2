@@ -1,4 +1,4 @@
-const CACHE_NAME = 'panda-royale-v5'; // Version bump to force update
+const CACHE_NAME = 'panda-royale-v6'; // Version bump to force update
 const ASSETS = [
   './',
   './index.html',

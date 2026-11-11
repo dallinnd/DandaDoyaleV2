@@ -1,19 +1,17 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getDatabase, ref, set, onValue, update, get } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
-
+// Supply the Firebase settings to enable multiplayer.
 const firebaseConfig = {
-    apiKey: "AIzaSyConuxhGCtGvJaa6TZ1bkUvlOhhTdyTgZE",
-    authDomain: "flip7share.firebaseapp.com",
-    databaseURL: "https://flip7share-default-rtdb.firebaseio.com",
-    projectId: "flip7share",
-    storageBucket: "flip7share.firebasestorage.app",
-    messagingSenderId: "467127126520",
-    appId: "1:467127126520:web:0646f4fc19352eaa11ee0d"
+    apiKey: '', authDomain: '', databaseURL: '', projectId: '',
+    storageBucket: '', messagingSenderId: '', appId: ''
 };
-
-
-const fApp = initializeApp(firebaseConfig);
-const db = getDatabase(fApp);
+let db = null;
+let getDatabase, ref, set, onValue, update, get;
+if (firebaseConfig.databaseURL) {
+    try {
+        const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js");
+        ({ getDatabase, ref, set, onValue, update, get } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js"));
+        db = getDatabase(initializeApp(firebaseConfig));
+    } catch (error) { console.error('Multiplayer unavailable:', error); }
+}
 
 // --- Data & Config ---
 const diceConfig = [
@@ -53,6 +51,7 @@ Object.assign(window, {
     openGameActions, resumeGame, confirmDelete, openNewGameModal, initGame,
     showResults, renderGame, changeRound, adjustWildCount, toggleSparkle,
     setWildTarget, setActiveInput, setActiveWildInput, kpInput, kpClear,
+    openDiePicker, closeDiePicker, chooseDieValue,
     kpToggleNeg, kpEnter, removeVal, toggleMenu, setTheme, clearHistory,
     // MP Functions
     openHostModeSelect, finalizeHostGame, joinExistingGame, leaveLobby,
@@ -82,7 +81,7 @@ function checkOnboarding() {
 
 function showOnboarding(step) {
     const menu = document.getElementById('menu-overlay');
-    if (menu) menu.remove(); 
+    if (menu) menu.remove();
     let container = document.getElementById('onboarding-container');
     if (!container) {
         container = document.createElement('div');
@@ -146,10 +145,10 @@ function updatePlayerName(val) {
 }
 
 function showHome() {
-    activeInputField = null; 
+    activeInputField = null;
     document.getElementById('lobby-screen').classList.add('hidden');
     document.getElementById('waiting-screen').classList.add('hidden');
-    
+
     if (!myName) {
         myName = "Panda";
         localStorage.setItem('panda_name', myName);
@@ -158,8 +157,8 @@ function showHome() {
     const gameCards = games.map((g, i) => {
         const isFinished = (g.currentRound === 9);
         const mpBadge = g.mpCode ? `<span class="ml-2 px-2 py-0.5 bg-purple-500/20 text-purple-400 text-[8px] font-black rounded-full border border-purple-500/30 uppercase tracking-widest">ONLINE</span>` : '';
-        const statusBadge = isFinished 
-            ? `<span class="ml-2 px-2 py-0.5 bg-green-500/20 text-green-500 text-[8px] font-black rounded-full border border-green-500/30 uppercase tracking-widest">Finished</span>` 
+        const statusBadge = isFinished
+            ? `<span class="ml-2 px-2 py-0.5 bg-green-500/20 text-green-500 text-[8px] font-black rounded-full border border-green-500/30 uppercase tracking-widest">Finished</span>`
             : `<span class="ml-2 px-2 py-0.5 bg-blue-500/20 text-blue-500 text-[8px] font-black rounded-full border border-blue-500/30 uppercase tracking-widest">Round ${g.currentRound + 1}</span>`;
         return `
         <div class="bg-[var(--bg-card)] p-6 rounded-2xl mb-4 flex justify-between items-center border border-[var(--border-ui)] active:scale-[0.98] transition-all cursor-pointer" onclick="openGameActions(${i})">
@@ -206,7 +205,7 @@ function openHostModeSelect() {
     const overlay = document.createElement('div');
     overlay.id = 'host-mode-modal';
     overlay.className = 'modal-overlay animate-fadeIn';
-    overlay.onclick = (e) => { if(e.target === overlay) overlay.remove(); };
+    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
     overlay.innerHTML = `<div class="action-popup">
         <h2 class="text-2xl font-black mb-8">Host Game</h2>
         <div class="flex flex-col gap-4">
@@ -218,54 +217,56 @@ function openHostModeSelect() {
 }
 
 async function finalizeHostGame(mode) {
-    if(document.getElementById('host-mode-modal')) document.getElementById('host-mode-modal').remove();
-    
+    if (!db) { alert("Multiplayer is unavailable until Firebase is configured."); return; }
+    if (document.getElementById('host-mode-modal')) document.getElementById('host-mode-modal').remove();
+
     multiplayerConfig.active = true;
     multiplayerConfig.isHost = true;
     const newCode = Math.floor(100000 + Math.random() * 900000).toString();
     multiplayerConfig.code = newCode;
-    
-    initGame(mode, true); 
-    
+
+    initGame(mode, true);
+
     activeGame.mpCode = newCode;
     activeGame.isHost = true;
     saveGame();
-    
-    await set(ref(db, `games/${newCode}`), { 
-        host: myName, 
+
+    await set(ref(db, `games/${newCode}`), {
+        host: myName,
         mode: mode,
-        status: "waiting", 
+        status: "waiting",
         roundNum: 0,
         targetCount: 4,
         playerOrder: [myName],
-        showGrandTotal: true 
+        showGrandTotal: true
     });
 
-    await set(ref(db, `games/${newCode}/players/${myName}`), { 
-        name: myName, 
-        submitted: false, 
+    await set(ref(db, `games/${newCode}/players/${myName}`), {
+        name: myName,
+        submitted: false,
         grandTotal: 0,
         roundScore: 0,
         yellowScore: 0,
         clearUsed: false
     });
-    
+
     onValue(ref(db, `games/${newCode}`), syncLobby);
 }
 
 async function joinExistingGame() {
+    if (!db) { alert("Multiplayer is unavailable until Firebase is configured."); return; }
     let code = prompt("Enter Game Code:");
     if (!code) return;
-    
+
     const gSnap = await get(ref(db, `games/${code}`));
-    if(!gSnap.exists()) return alert("Game not found!");
-    
+    if (!gSnap.exists()) return alert("Game not found!");
+
     multiplayerConfig.active = true;
     multiplayerConfig.isHost = false;
     multiplayerConfig.code = code;
-    
+
     const gameMode = gSnap.val().mode || 'normal';
-    initGame(gameMode, true); 
+    initGame(gameMode, true);
 
     activeGame.mpCode = code;
     activeGame.isHost = false;
@@ -274,15 +275,15 @@ async function joinExistingGame() {
     const pRef = ref(db, `games/${code}/players/${myName}`);
     const snap = await get(pRef);
     if (!snap.exists()) {
-        await set(pRef, { 
-            name: myName, 
-            submitted: false, 
+        await set(pRef, {
+            name: myName,
+            submitted: false,
             grandTotal: 0,
             roundScore: 0,
             yellowScore: 0,
             clearUsed: false
         });
-        
+
         const gameData = gSnap.val();
         let currentOrder = gameData.playerOrder || [];
         if (!currentOrder.includes(myName)) {
@@ -301,7 +302,7 @@ function getPityDiceCount(playerCount) {
 }
 
 function adjustLobbyCount(delta) {
-    if(!multiplayerConfig.isHost) return;
+    if (!multiplayerConfig.isHost) return;
     get(ref(db, `games/${multiplayerConfig.code}/targetCount`)).then((snap) => {
         let current = snap.val() || 4;
         let next = Math.max(1, Math.min(20, current + delta));
@@ -310,7 +311,7 @@ function adjustLobbyCount(delta) {
 }
 
 function toggleScoreVisibility() {
-    if(!multiplayerConfig.isHost) return;
+    if (!multiplayerConfig.isHost) return;
     get(ref(db, `games/${multiplayerConfig.code}/showGrandTotal`)).then((snap) => {
         const current = snap.val();
         update(ref(db, `games/${multiplayerConfig.code}`), { showGrandTotal: !current });
@@ -330,19 +331,19 @@ function syncLobby(snap) {
         const isSetup = container && container.innerHTML.includes('SEATING CHART');
         renderHostSettingsContent(isSetup);
     }
-    
+
     const lobbyEl = document.getElementById('lobby-screen');
     const waitingEl = document.getElementById('waiting-screen');
     const players = Object.values(data.players || {});
     const playerCount = data.targetCount || 4;
     const pityDiceCount = getPityDiceCount(playerCount);
-    
+
     multiplayerConfig.playerOrder = data.playerOrder || [];
 
     if (multiplayerConfig.isHost && data.status === "active" && data.roundNum === 0) {
         const existing = document.getElementById('host-settings-overlay');
         if (!existing && !sessionStorage.getItem('setup_shown')) {
-            openHostSettings(true); 
+            openHostSettings(true);
             sessionStorage.setItem('setup_shown', 'true');
         }
     }
@@ -351,9 +352,9 @@ function syncLobby(snap) {
         app.classList.add('hidden');
         waitingEl.classList.add('hidden');
         lobbyEl.classList.remove('hidden');
-        
+
         document.getElementById('lobby-code-display').innerText = `CODE: ${multiplayerConfig.code}`;
-        
+
         let controlsHtml = '';
         if (multiplayerConfig.isHost) {
             controlsHtml = `
@@ -366,31 +367,31 @@ function syncLobby(snap) {
                 <button onclick="adjustLobbyCount(1)" class="w-10 h-10 bg-white text-black font-black rounded-lg text-xl">+</button>
             </div>`;
         } else {
-             controlsHtml = `
+            controlsHtml = `
              <div class="text-center mb-4 opacity-50">
                  <div class="text-2xl font-black text-white">${playerCount} Players Expected</div>
                  <div class="text-[10px] uppercase">${pityDiceCount} Pity Dice Rules</div>
              </div>`;
         }
 
-        document.getElementById('lobby-player-list').innerHTML = controlsHtml + players.map(p => 
+        document.getElementById('lobby-player-list').innerHTML = controlsHtml + players.map(p =>
             `<div class="mp-row text-white"><span class="font-bold">${p.name}</span>${p.name === data.host ? '<span class="text-[10px] bg-yellow-500 text-black px-2 rounded-full">HOST</span>' : ''}</div>`
         ).join("");
 
         if (multiplayerConfig.isHost) {
-             let startBtn = document.getElementById('mp-start-btn');
-             if(!startBtn) {
-                 startBtn = document.createElement('button');
-                 startBtn.id = 'mp-start-btn';
-                 startBtn.className = "w-full bg-green-600 py-4 rounded-2xl font-black text-white mt-4 shadow-lg";
-                 startBtn.innerText = "START GAME";
-                 startBtn.onclick = () => update(ref(db, `games/${multiplayerConfig.code}`), { status: "active", roundNum: 0 });
-                 lobbyEl.appendChild(startBtn);
-             }
+            let startBtn = document.getElementById('mp-start-btn');
+            if (!startBtn) {
+                startBtn = document.createElement('button');
+                startBtn.id = 'mp-start-btn';
+                startBtn.className = "w-full bg-green-600 py-4 rounded-2xl font-black text-white mt-4 shadow-lg";
+                startBtn.innerText = "START GAME";
+                startBtn.onclick = () => update(ref(db, `games/${multiplayerConfig.code}`), { status: "active", roundNum: 0 });
+                lobbyEl.appendChild(startBtn);
+            }
         }
     } else if (data.status === "active") {
         lobbyEl.classList.add('hidden');
-        
+
         if (!document.getElementById('game-scroll')) {
             renderGame();
         }
@@ -399,19 +400,19 @@ function syncLobby(snap) {
             activeGame.currentRound = data.roundNum;
             multiplayerConfig.hasSubmitted = false;
             saveGame();
-            renderGame(); 
+            renderGame();
         }
 
         if (multiplayerConfig.hasSubmitted) {
             waitingEl.classList.remove('hidden');
-            waitingEl.classList.add('overflow-y-auto', 'pb-10'); 
+            waitingEl.classList.add('overflow-y-auto', 'pb-10');
             app.classList.add('hidden');
 
             const summaryHeader = document.querySelector('#waiting-screen h2');
             if (summaryHeader) summaryHeader.innerText = `ROUND ${data.roundNum + 1} - SUMMARY`;
             const listContainer = document.getElementById('waiting-list');
             const orderList = multiplayerConfig.playerOrder;
-            
+
             const calcPlayers = players.map(p => ({
                 ...p,
                 yellowScore: p.submitted ? (p.yellowScore || 0) : 0,
@@ -421,16 +422,16 @@ function syncLobby(snap) {
             }));
 
             // 1. Find Panda
-            const sortedByYellowRaw = [...calcPlayers].sort((a,b) => {
+            const sortedByYellowRaw = [...calcPlayers].sort((a, b) => {
                 if (b.yellowScore !== a.yellowScore) return b.yellowScore - a.yellowScore;
-                return a.orderIndex - b.orderIndex; 
+                return a.orderIndex - b.orderIndex;
             });
             const pandaPlayer = sortedByYellowRaw[0];
             const pandaIndex = pandaPlayer ? pandaPlayer.orderIndex : 0;
             const totalP = orderList.length;
 
             // 2. Picking Order
-            const pickingOrder = [...calcPlayers].sort((a,b) => {
+            const pickingOrder = [...calcPlayers].sort((a, b) => {
                 if (b.yellowScore !== a.yellowScore) return b.yellowScore - a.yellowScore;
                 const distA = getDistanceLeft(pandaIndex, a.orderIndex, totalP);
                 const distB = getDistanceLeft(pandaIndex, b.orderIndex, totalP);
@@ -438,15 +439,15 @@ function syncLobby(snap) {
             });
 
             // 3. Pity Dice
-            const pityOrder = [...calcPlayers].sort((a,b) => {
+            const pityOrder = [...calcPlayers].sort((a, b) => {
                 if (a.roundScore !== b.roundScore) return a.roundScore - b.roundScore;
-                
+
                 let distA = getDistanceRight(pandaIndex, a.orderIndex, totalP);
                 let distB = getDistanceRight(pandaIndex, b.orderIndex, totalP);
-                
+
                 if (distA === 0) distA = totalP + 999;
                 if (distB === 0) distB = totalP + 999;
-                
+
                 return distA - distB;
             });
             const pityList = pityOrder.slice(0, pityDiceCount);
@@ -462,12 +463,12 @@ function syncLobby(snap) {
             });
 
             // 5. Grand Order
-            const grandOrder = [...calcPlayers].sort((a,b) => b.grandTotal - a.grandTotal);
-            
+            const grandOrder = [...calcPlayers].sort((a, b) => b.grandTotal - a.grandTotal);
+
             let html = '';
 
             const myRoundData = activeGame.rounds[activeGame.currentRound];
-            const myYel = (myRoundData.yellow || []).reduce((a,b)=>a+b,0);
+            const myYel = (myRoundData.yellow || []).reduce((a, b) => a + b, 0);
             const myRnd = calculateRoundTotal(myRoundData);
 
             html += `
@@ -496,26 +497,26 @@ function syncLobby(snap) {
             // SECTION 2: PITY DICE
             html += `<div class="mb-4"><div class="text-sm font-black uppercase text-pink-500 tracking-widest mb-1 pl-2">PITY DICE (${pityDiceCount})</div>`;
             if (pityList.length > 0) {
-                 html += `<div class="grid grid-cols-1 gap-2">`;
-                 pityList.forEach(p => {
+                html += `<div class="grid grid-cols-1 gap-2">`;
+                pityList.forEach(p => {
                     const val = p.submitted ? p.roundScore : '-';
                     html += `<div class="bg-pink-500/10 border border-pink-500/50 p-3 rounded-xl flex justify-between items-center">
                         <span class="font-bold text-pink-400">${p.name}</span>
                         <span class="font-mono text-white text-xs">Round: ${val}</span>
                     </div>`;
-                 });
-                 html += `</div>`;
+                });
+                html += `</div>`;
             } else { html += `<div class="opacity-30 italic pl-2 text-xs">Waiting...</div>`; }
             html += `</div>`;
 
             // SECTION 3: TRADES
             html += `<div class="mb-4"><div class="text-sm font-black uppercase text-slate-400 tracking-widest mb-1 pl-2">TRADES</div>`;
             if (tradeList.length > 0) {
-                 html += `<div class="flex flex-wrap gap-2">`;
-                 tradeList.forEach(p => {
+                html += `<div class="flex flex-wrap gap-2">`;
+                tradeList.forEach(p => {
                     html += `<span class="bg-slate-700/50 border border-slate-600 px-3 py-1 rounded-lg text-xs font-bold text-slate-300">${p.name}</span>`;
-                 });
-                 html += `</div>`;
+                });
+                html += `</div>`;
             } else { html += `<div class="opacity-60 italic pl-2 text-sm text-slate-600">No trades.</div>`; }
             html += `</div>`;
 
@@ -526,8 +527,8 @@ function syncLobby(snap) {
                 const val = p.submitted ? p.yellowScore : '-';
                 html += `<div class="p-3 flex justify-between items-center">
                     <div class="flex items-center gap-3">
-                        <span class="text-sm font-black w-4 text-slate-500">${i+1}</span>
-                        <span class="font-bold text-sm ${p.name===myName?'text-blue-400':'text-slate-300'}">${p.name}</span>
+                        <span class="text-sm font-black w-4 text-slate-500">${i + 1}</span>
+                        <span class="font-bold text-sm ${p.name === myName ? 'text-blue-400' : 'text-slate-300'}">${p.name}</span>
                     </div>
                     <div class="bg-[#fbbf24] text-black px-2 py-0.5 rounded-lg text-xs font-black">${val}</div>
                 </div>`;
@@ -535,16 +536,16 @@ function syncLobby(snap) {
             html += `</div></div>`;
 
             // SECTION 5: GRAND TOTAL
-            if (data.showGrandTotal !== false) { 
+            if (data.showGrandTotal !== false) {
                 html += `<div class="mb-8"><div class="text-sm font-black uppercase text-green-500 tracking-widest mb-1 pl-2">LEADERBOARD</div>`;
                 html += `<div class="bg-gradient-to-b from-green-900/20 to-transparent rounded-xl border border-green-500/20 divide-y divide-green-500/10">`;
                 grandOrder.forEach((p, i) => {
                     html += `<div class="p-3 flex justify-between items-center">
                         <div class="flex items-center gap-3">
-                            <span class="text-[10px] font-black w-4 text-green-700">${i+1}</span>
-                            <span class="font-bold text-sm ${p.name===myName?'text-green-400':'text-white'}">${p.name} ${p.submitted?'':'...'}</span>
+                            <span class="text-[10px] font-black w-4 text-green-700">${i + 1}</span>
+                            <span class="font-bold text-sm ${p.name === myName ? 'text-green-400' : 'text-white'}">${p.name} ${p.submitted ? '' : '...'}</span>
                         </div>
-                        <span class="font-black text-green-500">${p.grandTotal||0}</span>
+                        <span class="font-black text-green-500">${p.grandTotal || 0}</span>
                     </div>`;
                 });
                 html += `</div></div>`;
@@ -554,41 +555,41 @@ function syncLobby(snap) {
 
             // SECTION 6: WAITING FOR
             const waitingFor = players.filter(p => !p.submitted);
-            
+
             // --- ROUND 10 FINAL SUMMARY INTERCEPT ---
             if (activeGame.currentRound === 9 && waitingFor.length === 0) {
                 // Build Final Leaderboard
                 html = `<div class="mb-8 mt-4"><div class="text-3xl font-black uppercase text-yellow-500 tracking-widest mb-6 text-center drop-shadow-md">FINAL STANDINGS</div>`;
                 html += `<div class="bg-gradient-to-b from-white/10 to-transparent rounded-3xl border border-white/10 divide-y divide-white/5 shadow-2xl">`;
-                
+
                 grandOrder.forEach((p, i) => {
                     let medal = '';
-                    if(i === 0) medal = '🥇';
-                    if(i === 1) medal = '🥈';
-                    if(i === 2) medal = '🥉';
-                    
+                    if (i === 0) medal = '🥇';
+                    if (i === 1) medal = '🥈';
+                    if (i === 2) medal = '🥉';
+
                     html += `<div class="p-5 flex justify-between items-center ${p.name === myName ? 'bg-white/5' : ''}">
                         <div class="flex items-center gap-4">
-                            <span class="text-2xl font-black w-8 text-center ${i===0?'text-yellow-400':i===1?'text-slate-300':i===2?'text-amber-600':'text-slate-600 drop-shadow-md'}">${medal || (i+1)}</span>
-                            <span class="font-black text-xl ${p.name===myName?'text-white':'text-slate-300'}">${p.name}</span>
+                            <span class="text-2xl font-black w-8 text-center ${i === 0 ? 'text-yellow-400' : i === 1 ? 'text-slate-300' : i === 2 ? 'text-amber-600' : 'text-slate-600 drop-shadow-md'}">${medal || (i + 1)}</span>
+                            <span class="font-black text-xl ${p.name === myName ? 'text-white' : 'text-slate-300'}">${p.name}</span>
                         </div>
-                        <span class="font-black text-3xl ${i===0?'text-yellow-400':'text-white'}">${p.grandTotal||0}</span>
+                        <span class="font-black text-3xl ${i === 0 ? 'text-yellow-400' : 'text-white'}">${p.grandTotal || 0}</span>
                     </div>`;
                 });
                 html += `</div></div>`;
-                
+
                 // Trigger Podium Popup for Top 3
                 if (!multiplayerConfig.podiumShown) {
                     multiplayerConfig.podiumShown = true;
                     const myRank = grandOrder.findIndex(p => p.name === myName);
                     if (myRank >= 0 && myRank <= 2) {
-                        setTimeout(() => showPodiumPopup(myRank, grandOrder[myRank].grandTotal), 600); 
+                        setTimeout(() => showPodiumPopup(myRank, grandOrder[myRank].grandTotal), 600);
                     }
                 }
             } else {
                 // Standard WAITING FOR list
-                if(waitingFor.length > 0) {
-                     html += `<div class="mt-8 text-center animate-pulse"><div class="text-[10px] font-black uppercase text-red-500 tracking-widest mb-2">WAITING FOR</div><div class="text-slate-400 text-xs font-bold">${waitingFor.map(p => p.name).join(', ')}</div></div>`;
+                if (waitingFor.length > 0) {
+                    html += `<div class="mt-8 text-center animate-pulse"><div class="text-[10px] font-black uppercase text-red-500 tracking-widest mb-2">WAITING FOR</div><div class="text-slate-400 text-xs font-bold">${waitingFor.map(p => p.name).join(', ')}</div></div>`;
                 }
             }
 
@@ -596,17 +597,17 @@ function syncLobby(snap) {
 
             const hostBtn = document.getElementById('host-next-btn');
             const msg = document.getElementById('waiting-msg');
-            
+
             if (multiplayerConfig.isHost) {
                 hostBtn.classList.remove('hidden');
                 msg.classList.add('hidden');
-                
+
                 // Change Host Button behavior if game is over
                 if (activeGame.currentRound === 9 && waitingFor.length === 0) {
                     hostBtn.innerText = "END GAME";
                     hostBtn.classList.remove('bg-yellow-500', 'text-black', 'bg-slate-700');
                     hostBtn.classList.add('bg-red-600', 'text-white');
-                    hostBtn.onclick = () => exitHostGame(); 
+                    hostBtn.onclick = () => exitHostGame();
                 } else {
                     hostBtn.innerText = "START NEXT ROUND";
                     hostBtn.classList.remove('bg-red-600', 'bg-slate-700', 'text-white');
@@ -618,11 +619,11 @@ function syncLobby(snap) {
                     // Non-Host: Game over, show exit button instead of waiting text
                     hostBtn.classList.remove('hidden');
                     msg.classList.add('hidden');
-                    
+
                     hostBtn.innerText = "RETURN TO HISTORY";
                     hostBtn.classList.remove('bg-yellow-500', 'text-black', 'bg-red-600');
                     hostBtn.classList.add('bg-slate-700', 'text-white');
-                    hostBtn.onclick = () => window.location.reload(); 
+                    hostBtn.onclick = () => window.location.reload();
                 } else {
                     // Non-Host: Still waiting for round to end/continue
                     hostBtn.classList.add('hidden');
@@ -641,10 +642,10 @@ function syncLobby(snap) {
 // --- HOST SETTINGS UI (REFACTORED) ---
 
 function openHostSettings(isSetupMode = false) {
-    if(!multiplayerConfig.isHost) return;
+    if (!multiplayerConfig.isHost) return;
 
     let overlay = document.getElementById('host-settings-overlay');
-    if(!overlay) {
+    if (!overlay) {
         overlay = document.createElement('div');
         overlay.id = 'host-settings-overlay';
         overlay.className = 'modal-overlay animate-fadeIn';
@@ -656,15 +657,15 @@ function openHostSettings(isSetupMode = false) {
 
 function renderHostSettingsContent(isSetupMode) {
     const container = document.getElementById('host-settings-content');
-    if(!container) return;
+    if (!container) return;
 
     get(ref(db, `games/${multiplayerConfig.code}`)).then((snap) => {
         const data = snap.val();
-        if(!data) return;
+        if (!data) return;
         const order = data.playerOrder || [];
-        const pCount = data.targetCount || 4; 
-        const gameCode = multiplayerConfig.code; 
-        const showGT = data.showGrandTotal !== false; 
+        const pCount = data.targetCount || 4;
+        const gameCode = multiplayerConfig.code;
+        const showGT = data.showGrandTotal !== false;
 
         container.innerHTML = `
         <h2 class="text-2xl font-black mb-2">${isSetupMode ? 'SEATING CHART' : 'HOST SETTINGS'}</h2>
@@ -704,7 +705,7 @@ function renderHostSettingsContent(isSetupMode) {
              <div id="host-order-list" class="flex flex-col gap-2 max-h-[150px] overflow-y-auto">
                  ${order.map((p, i) => `
                  <div class="flex items-center gap-2 bg-white/5 p-2 rounded-lg border border-white/10">
-                    <span class="text-[10px] font-bold w-4 text-slate-500">${i+1}</span>
+                    <span class="text-[10px] font-bold w-4 text-slate-500">${i + 1}</span>
                     <span class="flex-1 text-left font-bold text-sm truncate">${p}</span>
                     <div class="flex gap-1">
                         <button onclick="movePlayerOrder(${i}, -1)" class="w-8 h-8 bg-black/20 hover:bg-white/20 rounded text-[10px]">▲</button>
@@ -729,8 +730,8 @@ function movePlayerOrder(index, direction) {
     [list[index], list[targetIndex]] = [list[targetIndex], list[index]];
     multiplayerConfig.playerOrder = list;
     savePlayerOrder();
-    
-    const container = document.getElementById('host-settings-content'); 
+
+    const container = document.getElementById('host-settings-content');
     const isSetup = container && container.innerHTML.includes('SEATING CHART');
     renderHostSettingsContent(isSetup);
 }
@@ -741,11 +742,11 @@ function savePlayerOrder() {
 
 function closeHostSettings() {
     const el = document.getElementById('host-settings-overlay');
-    if(el) el.remove();
+    if (el) el.remove();
 }
 
 function exitHostGame() {
-    if(confirm("End game for everyone?")) {
+    if (confirm("End game for everyone?")) {
         window.location.reload();
     }
 }
@@ -754,12 +755,12 @@ async function hostPushNextRound() {
     const snap = await get(ref(db, `games/${multiplayerConfig.code}`));
     const data = snap.val();
     const currentR = data.roundNum;
-    
+
     const updates = {};
-    
+
     // --- NEW: SAVE ROUND TO HISTORY ---
     updates[`games/${multiplayerConfig.code}/history/${currentR}`] = data.players;
-    
+
     updates[`games/${multiplayerConfig.code}/roundNum`] = currentR + 1;
     for (let p in data.players) {
         updates[`games/${multiplayerConfig.code}/players/${p}/submitted`] = false;
@@ -773,7 +774,7 @@ function editMyScore() {
 }
 
 function leaveLobby() {
-    if(confirm("Leave game?")) window.location.reload();
+    if (confirm("Leave game?")) window.location.reload();
 }
 
 // --- Standard Game Logic ---
@@ -781,7 +782,7 @@ function openGameActions(index) {
     const overlay = document.createElement('div');
     overlay.id = 'action-modal';
     overlay.className = 'modal-overlay animate-fadeIn';
-    overlay.onclick = (e) => { if(e.target === overlay) overlay.remove(); };
+    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
     overlay.innerHTML = `<div class="action-popup">
         <h2 class="text-2xl font-black mb-2">${games[index].mode.toUpperCase()} MODE</h2>
         <p class="text-[10px] font-black uppercase opacity-40 tracking-[0.2em] mb-8">Game #${games.length - index}</p>
@@ -801,22 +802,22 @@ function openGameActions(index) {
 
 function resumeGame(i) {
     activeGame = games[i];
-    
+
     if (activeGame.mpCode) {
         multiplayerConfig.active = true;
         multiplayerConfig.code = activeGame.mpCode;
         multiplayerConfig.isHost = activeGame.isHost || false;
-        
+
         onValue(ref(db, `games/${activeGame.mpCode}`), syncLobby);
-        
+
         const m = document.getElementById('action-modal');
         if (m) m.remove();
     } else {
-        multiplayerConfig.active = false; 
+        multiplayerConfig.active = false;
         const m = document.getElementById('action-modal');
         if (m) m.remove();
         renderGame();
-        setActiveInput('yellow'); 
+        setActiveInput('yellow');
     }
 }
 
@@ -834,7 +835,7 @@ function openNewGameModal() {
     const overlay = document.createElement('div');
     overlay.id = 'mode-modal';
     overlay.className = 'modal-overlay animate-fadeIn';
-    overlay.onclick = (e) => { if(e.target === overlay) overlay.remove(); };
+    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
     overlay.innerHTML = `<div class="action-popup">
         <h2 class="text-2xl font-black mb-8">Select Mode</h2>
         <div class="flex flex-col gap-4">
@@ -846,22 +847,21 @@ function openNewGameModal() {
 }
 
 function initGame(mode, suppressRender = false) {
-    if(document.getElementById('mode-modal')) document.getElementById('mode-modal').remove();
-    activeGame = { 
+    if (document.getElementById('mode-modal')) document.getElementById('mode-modal').remove();
+    activeGame = {
         id: Date.now(), mode: mode,
-        date: new Date().toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }), 
-        currentRound: 0, 
-        // Generates an array of dice objects equal to the round number (i + 1)
-        rounds: Array(10).fill(null).map((_, i) => ({ 
-            dice: Array.from({ length: i + 1 }, () => ({ value: null, color: null, sparkle: false })),
-            wild: [] 
-        })) 
-    }; 
-    games.unshift(activeGame); 
-    saveGame(); 
-    if(!suppressRender) {
+        date: new Date().toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+        currentRound: 0,
+        rounds: Array(10).fill(null).map(() => ({
+            yellow: [], purple: [], blue: [], red: [], green: [], clear: [], pink: [], sage: [],
+            wild: [], blueHasSparkle: false
+        }))
+    };
+    games.unshift(activeGame);
+    saveGame();
+    if (!suppressRender) {
         renderGame();
-        setActiveDieInput(0); // Auto-focus the first die
+        setActiveInput('yellow');
     }
 }
 
@@ -898,97 +898,6 @@ function showResults() {
         <button onclick="showHome()" class="w-full bg-slate-800 py-5 rounded-3xl font-black text-xl text-white mb-6 shadow-lg">BACK TO HISTORY</button>
     </div>`;
 }
-// ------------
-// Newer Format
-// ------------
-// --- Tile UI Generator ---
-function renderDieTile(die, index) {
-    const selectedColorConfig = diceConfig.find(d => d.id === die.color);
-    const borderColor = selectedColorConfig ? selectedColorConfig.color : '#cbd5e1'; 
-    const isActive = activeInputField === `die-${index}`;
-
-    let html = `
-    <div onclick="setActiveDieInput(${index})" id="die-card-${index}" class="wild-card ${isActive ? 'active-input' : ''}" style="border-left: 8px solid ${borderColor}">
-        <div class="flex justify-between items-start">
-            <span class="text-[10px] font-black uppercase opacity-40">Die #${index + 1}</span>
-            <span class="text-3xl font-black wild-val-display">${die.value !== null ? die.value : '-'}</span>
-        </div>
-        <div class="color-picker-wheel mt-2">`;
-            
-    diceConfig.forEach(d => {
-        const isSelected = die.color === d.id;
-        html += `<div onclick="event.stopPropagation(); setDieColor(${index}, '${d.id}')" 
-                      class="wheel-item ${isSelected ? 'selected' : ''}" 
-                      style="background-color: ${d.color}"></div>`;
-    });
-
-    html += `</div>`;
-
-    // Conditionally render Sparkle Toggle for Blue
-    if (die.color === 'blue') {
-        const sparkleText = die.sparkle ? 'Sparkle Activated ✨' : 'Add Sparkle?';
-        const sparkleClass = die.sparkle ? 'sparkle-on' : 'sparkle-off';
-        
-        html += `
-        <div class="mt-3 pt-3 border-t border-black/5 animate-fadeIn">
-            <button onclick="event.stopPropagation(); toggleDieSparkle(${index})" class="sparkle-btn-full ${sparkleClass}">
-                ${sparkleText}
-            </button>
-        </div>`;
-    }
-    return html + `</div>`;
-}
-
-// --- Tile Interactions ---
-function setActiveDieInput(idx) {
-    activeInputField = `die-${idx}`;
-    document.querySelectorAll('.wild-card').forEach(c => c.classList.remove('active-input'));
-    const card = document.getElementById(`die-card-${idx}`);
-    if (card) card.classList.add('active-input');
-    
-    const die = activeGame.rounds[activeGame.currentRound].dice[idx];
-    const config = diceConfig.find(d => d.id === die.color) || { color: '#ffffff', text: '#000000' };
-    
-    updateKeypadTheme(config.color, config.text);
-    updateKpDisplay();
-}
-
-function setDieColor(idx, colorId) {
-    activeGame.rounds[activeGame.currentRound].dice[idx].color = colorId;
-    setActiveDieInput(idx); 
-    saveGame();
-    renderGame(); 
-}
-
-function toggleDieSparkle(idx) {
-    const die = activeGame.rounds[activeGame.currentRound].dice[idx];
-    die.sparkle = !die.sparkle;
-    saveGame();
-    renderGame(); 
-}
-
-// Update kpEnter to handle the new die structure and auto-advance
-function kpEnter() {
-    if (!activeInputField || !keypadValue || keypadValue === '-') return;
-    const rd = activeGame.rounds[activeGame.currentRound];
-    
-    if (activeInputField.startsWith('die-')) {
-        const idx = parseInt(activeInputField.split('-')[1]);
-        rd.dice[idx].value = parseFloat(keypadValue);
-        
-        // Auto-advance to the next die if one exists
-        if (idx + 1 < rd.dice.length) {
-            setActiveDieInput(idx + 1);
-        }
-    } else if (activeInputField.startsWith('wild-')) {
-        rd.wild[parseInt(activeInputField.split('-')[1])].value = parseFloat(keypadValue);
-    }
-    
-    kpClear(); 
-    updateAllDisplays(); 
-    saveGame();
-    renderGame();
-}
 
 // --- Render Engine ---
 function renderGame() {
@@ -998,14 +907,14 @@ function renderGame() {
     const sageGlobalStatus = isExpansion ? isSageAlreadyCompleteBy(activeGame.currentRound) : false;
     const sageUnlocked = isExpansion && activeGame.currentRound > 0 && isSageAlreadyCompleteBy(activeGame.currentRound - 1);
     const isLastRound = roundNum === 10;
-     
+
     // --- NEW: SAGE CONGRATULATIONS POPUP LOGIC ---
     if (sageUnlocked && !activeGame.sagePopupShown) {
         activeGame.sagePopupShown = true;
         saveGame();
         setTimeout(showSagePopup, 500);
     }
-     
+
     let leftAction, rightAction;
 
     if (multiplayerConfig.active) {
@@ -1015,23 +924,29 @@ function renderGame() {
             leftAction = `<button onclick="leaveLobby()" class="text-[10px] font-black uppercase opacity-50 px-3 py-2 rounded-lg bg-black/5">EXIT</button>`;
         }
         rightAction = `<button onclick="submitMultiplayerRound()" class="bg-green-500 text-white font-black text-xs px-5 py-2 rounded-lg shadow-lg hover:bg-green-400 transition-colors uppercase tracking-wider">SUBMIT</button>`;
-    
+
     } else {
         leftAction = `<button onclick="showHome()" class="text-[10px] font-black uppercase opacity-50 px-3 py-2 rounded-lg bg-black/5">Exit</button>`;
     }
 
-    let reviewSectionHtml = '';
-    if (activeGame.currentRound > 0) {
-        const pr = activeGame.rounds[activeGame.currentRound - 1];
-        reviewSectionHtml += `
-            <div class="animate-fadeIn">
-                <div class="prev-round-box"><span>Prev Round Yellow Total</span><span class="text-xl">${(pr.yellow || []).reduce((a,b)=>a+b,0)}</span></div>
-                <div class="prev-total-box"><span>Last Round Total Score</span><span class="text-xl">${calculateRoundTotal(pr)}</span></div>
-            </div>`;
-    }
+    const previousRoundYellow = activeGame.currentRound > 0
+        ? (activeGame.rounds[activeGame.currentRound - 1].yellow || []).reduce((a, b) => a + b, 0)
+        : null;
+    const dieCount = [...diceConfig.map(d => d.id), 'sage']
+        .reduce((count, id) => count + ((roundData[id] || []).length), (roundData.wild || []).length);
+    const scoreSummaryHtml = `
+        <div class="score-summary animate-fadeIn">
+            <div class="previous-yellow-stat"><span>Previous Round Yellow</span><strong>${previousRoundYellow === null ? '--' : previousRoundYellow}</strong></div>
+            <div class="score-stat-grid">
+                <div class="score-stat"><span>Die Count</span><strong id="die-count-display">${dieCount}</strong></div>
+                <div class="score-stat score-stat-round"><span>Round Total</span><strong id="round-total-stat">${calculateRoundTotal(roundData)}</strong></div>
+            </div>
+            <div class="grand-score-stat"><span>Total Score</span><strong id="grand-total-stat">${calculateGrandTotal(activeGame)}</strong></div>
+        </div>`;
 
+    let sageStatusHtml = '';
     if (isExpansion && roundNum >= 2 && sageGlobalStatus) {
-        reviewSectionHtml += `
+        sageStatusHtml = `
             <div class="prev-round-box bg-yellow-500 text-black border-none mb-3 py-3 animate-fadeIn flex justify-between items-center shadow-md">
                 <span class="text-[10px] font-black uppercase tracking-widest">Sage Quest</span>
                 <span class="text-xs font-black tracking-tighter italic decoration-black underline"> COMPLETE ✓ </span>
@@ -1052,32 +967,23 @@ function renderGame() {
             </div>`;
     }
 
-    // Replace the old diceRowsHtml declaration in renderGame with this:
-    let diceRowsHtml = `
-        <div class="grid grid-cols-1 gap-4 mb-4 animate-fadeIn">
-            ${roundData.dice.map((die, idx) => renderDieTile(die, idx)).join('')}
-        </div>`;
-    
-    // If you still need Expansion/Normal labels:
-    if (roundNum === 1) {
-        diceRowsHtml += `<div class="mt-8 text-center animate-fadeIn px-4"><div class="${isExpansion ? 'expansion-gradient' : 'text-slate-400'} text-5xl font-black uppercase tracking-tight">${isExpansion ? 'Expansion Pack<br>Edition' : 'Normal Game'}</div></div>`;
-    }
-    
-     
+    let diceRowsHtml = (roundNum === 1)
+        ? `<div class="animate-fadeIn">${renderDiceSection(diceConfig[0], roundData)}</div>`
+        : diceConfig.map(dice => `<div class="animate-fadeIn">${renderDiceSection(dice, roundData)}</div>`).join('');
+
     if (sageUnlocked && roundNum > 1) {
-        diceRowsHtml += `<div class="mt-6 pt-6 border-t-4 border-yellow-500/20 animate-fadeIn">${renderDiceRow(sageDiceConfig, roundData)}</div>`;
+        diceRowsHtml += `<div class="mt-6 pt-6 border-t-4 border-yellow-500/20 animate-fadeIn">${renderDiceSection(sageDiceConfig, roundData)}</div>`;
     }
 
     // --- FIX: DEFINE topBarContent BEFORE USING IT ---
     let topBarContent;
-    
+
     if (multiplayerConfig.active) {
         // Multiplayer Header Construction
         topBarContent = `
             ${leftAction}
             <div class="text-center">
                 <div class="text-xl font-black uppercase">Round ${roundNum}</div>
-                <div id="round-total-display" class="text-5xl font-black">0</div>
             </div>
             ${rightAction}
         `;
@@ -1085,17 +991,16 @@ function renderGame() {
         // Local Game Header Construction
         const leftChevron = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M15 19l-7-7 7-7"></path></svg>`;
         const rightChevron = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"></path></svg>`;
-        const nextBtn = isLastRound 
+        const nextBtn = isLastRound
             ? `<button onclick="showResults()" class="px-4 py-2 bg-green-600 text-white text-[10px] font-black uppercase rounded-lg shadow-lg">Results</button>`
             : `<button onclick="changeRound(1)" class="nav-btn">${rightChevron}</button>`;
-        
+
         topBarContent = `
             ${leftAction}
             <div class="flex items-center gap-6">
                 <button onclick="changeRound(-1)" class="nav-btn ${roundNum === 1 ? 'disabled' : ''}">${leftChevron}</button>
                 <div class="text-center">
                     <div class="text-xl font-black uppercase">Round ${roundNum}</div>
-                    <div id="round-total-display" class="text-5xl font-black">0</div>
                 </div>
                 ${nextBtn}
             </div>
@@ -1108,8 +1013,9 @@ function renderGame() {
             ${topBarContent}
         </div>
         <div class="p-4 pb-8">
-            ${reviewSectionHtml}
-            <div class="section-title animate-fadeIn"><h3>Dice Calculators</h3></div>
+            ${scoreSummaryHtml}
+            ${sageStatusHtml}
+            <div class="section-title animate-fadeIn"><h3>Dice by Color</h3></div>
             <div class="space-y-3">
                 ${diceRowsHtml}
                 ${progressSectionHtml}
@@ -1117,12 +1023,18 @@ function renderGame() {
                     <div class="wild-counter-inline shadow-sm"><span class="text-[10px] font-black uppercase opacity-60">Wild Dice Qty</span><div class="flex items-center gap-5"><button onclick="adjustWildCount(-1)" class="wild-btn-minus">-</button><span id="wild-count-num" class="font-black text-2xl">${(roundData.wild || []).length}</span><button onclick="adjustWildCount(1)" class="wild-btn-plus">+</button></div></div>
                     <div class="wild-stack" id="wild-list-container">${(roundData.wild || []).map((w, idx) => renderWildCardHtml(w, idx)).join('')}</div>
                 </div>
-            </div><div class="grand-total-footer animate-fadeIn"><span class="text-[10px] font-black uppercase opacity-50 block mb-1">Grand Total</span><span id="grand-total-box" class="text-5xl font-black">0</span></div>
+            </div>
         </div>
     </div>
-    <div id="keypad-container" class="keypad-area p-4 flex flex-col"><div id="active-input-display" class="text-center text-lg font-black mb-3 h-6 tracking-widest uppercase opacity-60">-</div><div class="grid grid-cols-4 gap-2 flex-1">${[1,2,3].map(n => `<button onclick="kpInput('${n}')" class="kp-btn bg-black/5 text-inherit text-3xl">${n}</button>`).join('')}<button id="add-btn" onclick="kpEnter()" class="kp-btn bg-green-600 text-white row-span-4 h-full">ADD</button>${[4,5,6].map(n => `<button onclick="kpInput('${n}')" class="kp-btn bg-black/5 text-inherit text-3xl">${n}</button>`).join('')}${[7,8,9].map(n => `<button onclick="kpInput('${n}')" class="kp-btn bg-black/5 text-inherit text-3xl">${n}</button>`).join('')}<button onclick="kpClear()" class="kp-btn bg-black/5 text-lg font-bold text-slate-400">CLR</button><button onclick="kpInput('0')" class="kp-btn bg-black/5 text-inherit text-3xl">0</button><button onclick="kpToggleNeg()" class="kp-btn bg-black/5 text-inherit text-2xl">+/-</button></div></div>`;
-     
-    if (!activeInputField) { setActiveInput('yellow'); }
+    <div id="keypad-container" class="keypad-area p-4 flex flex-col"><div id="active-input-display" class="text-center text-lg font-black mb-3 h-6 tracking-widest uppercase opacity-60">-</div><div class="grid grid-cols-4 gap-2 flex-1">${[1, 2, 3].map(n => `<button onclick="kpInput('${n}')" class="kp-btn bg-black/5 text-inherit text-3xl">${n}</button>`).join('')}<button id="add-btn" onclick="kpEnter()" class="kp-btn bg-green-600 text-white row-span-4 h-full">ADD</button>${[4, 5, 6].map(n => `<button onclick="kpInput('${n}')" class="kp-btn bg-black/5 text-inherit text-3xl">${n}</button>`).join('')}${[7, 8, 9].map(n => `<button onclick="kpInput('${n}')" class="kp-btn bg-black/5 text-inherit text-3xl">${n}</button>`).join('')}<button onclick="kpClear()" class="kp-btn bg-black/5 text-lg font-bold text-slate-400">CLR</button><button onclick="kpInput('0')" class="kp-btn bg-black/5 text-inherit text-3xl">0</button><button onclick="kpToggleNeg()" class="kp-btn bg-black/5 text-inherit text-2xl">+/-</button></div></div>`;
+
+    if (!activeInputField || activeInputField.startsWith('wild-')) {
+        const wildIdx = activeInputField?.startsWith('wild-') ? parseInt(activeInputField.split('-')[1]) : -1;
+        if (wildIdx >= 0 && roundData.wild?.[wildIdx]) setActiveWildInput(wildIdx);
+        else setActiveInput('yellow');
+    } else {
+        setActiveInput(activeInputField);
+    }
     updateAllDisplays();
 }
 
@@ -1154,13 +1066,20 @@ function updateAllDisplays() {
         if (!sumEl) return;
         const vals = round[d.id] || [];
         let base = (vals.reduce((a, b) => a + b, 0)) + (wildBonuses[d.id] || 0);
-        let score = (d.id==='purple'||(d.id==='blue'&&round.blueHasSparkle)) ? base*2 : (d.id==='red' ? base*vals.length : base);
+        let score = (d.id === 'purple' || (d.id === 'blue' && round.blueHasSparkle)) ? base * 2 : (d.id === 'red' ? base * vals.length : base);
         sumEl.textContent = score;
         const valBox = document.getElementById(`${d.id}-values`);
-        if (valBox) valBox.innerHTML = vals.map((v, i) => `<span class="inline-flex items-center bg-black/10 px-5 py-3 rounded-2xl text-xl font-black border border-black/5">${v} <button onclick="event.stopPropagation(); removeVal('${d.id}', ${i})" class="ml-4 w-8 h-8 flex items-center justify-center bg-black/20 rounded-full text-lg opacity-60 active:bg-red-500 active:text-white">×</button></span>`).join('');
+        if (valBox) valBox.innerHTML = vals.map((v, i) => `<span class="die-value-chip">${v}<button aria-label="Remove ${d.label} die showing ${v}" onclick="event.stopPropagation(); removeVal('${d.id}', ${i})" class="remove-die-value">×</button></span>`).join('');
     });
-    document.getElementById('round-total-display').textContent = calculateRoundTotal(round);
-    document.getElementById('grand-total-box').textContent = calculateGrandTotal(activeGame);
+    const roundTotal = calculateRoundTotal(round);
+    const grandTotal = calculateGrandTotal(activeGame);
+    const summaryRound = document.getElementById('round-total-stat');
+    if (summaryRound) summaryRound.textContent = roundTotal;
+    const summaryGrand = document.getElementById('grand-total-stat');
+    if (summaryGrand) summaryGrand.textContent = grandTotal;
+    const countDisplay = document.getElementById('die-count-display');
+    if (countDisplay) countDisplay.textContent = [...diceConfig.map(d => d.id), 'sage']
+        .reduce((count, id) => count + ((round[id] || []).length), (round.wild || []).length);
 }
 
 // --- Interaction Helpers ---
@@ -1176,7 +1095,7 @@ function updateKeypadTheme(bgColor, textColor) {
 // --- SUBMISSION LOGIC ---
 
 async function submitMultiplayerRound() {
-    if(!multiplayerConfig.active) return;
+    if (!multiplayerConfig.active) return;
 
     const currentRData = activeGame.rounds[activeGame.currentRound];
     const rTotal = calculateRoundTotal(currentRData);
@@ -1185,9 +1104,9 @@ async function submitMultiplayerRound() {
     const hasNaturalClear = (currentRData.clear || []).length > 0;
     const hasWildClear = (currentRData.wild || []).some(w => w.target === 'clear');
     const clrUsed = hasNaturalClear || hasWildClear;
-    
+
     multiplayerConfig.hasSubmitted = true;
-    
+
     await update(ref(db, `games/${multiplayerConfig.code}/players/${myName}`), {
         submitted: true,
         roundScore: rTotal,
@@ -1197,12 +1116,12 @@ async function submitMultiplayerRound() {
     });
 }
 
-async function changeRound(s) { 
+async function changeRound(s) {
     if (!multiplayerConfig.active) {
-        const n = activeGame.currentRound + s; 
+        const n = activeGame.currentRound + s;
         if (n < 0 || n >= 10) return;
-        setActiveInput('yellow'); 
-        activeGame.currentRound = n; saveGame(); renderGame(); 
+        setActiveInput('yellow');
+        activeGame.currentRound = n; saveGame(); renderGame();
     }
 }
 
@@ -1245,32 +1164,78 @@ function setWildTarget(idx, targetId) {
 }
 
 function setActiveWildInput(idx) {
+    app.classList.add('wild-entry-active');
     activeInputField = `wild-${idx}`;
     document.querySelectorAll('.wild-card').forEach((c, i) => c.classList.toggle('active-input', i === idx));
-    document.querySelectorAll('.dice-row').forEach(r => { r.style.backgroundColor = ""; r.style.color = ""; });
+    document.querySelectorAll('.dice-row').forEach(r => r.classList.remove('active-input'));
     updateKeypadTheme("#ffffff", "#000000"); updateKpDisplay();
 }
 
 function setActiveInput(id) {
+    app.classList.remove('wild-entry-active');
     activeInputField = id;
     document.querySelectorAll('.wild-card').forEach(c => c.classList.remove('active-input'));
     const all = [...diceConfig, sageDiceConfig];
     const config = all.find(d => d.id === id);
-    document.querySelectorAll('.dice-row').forEach(r => { r.style.backgroundColor = ""; r.style.color = ""; });
+    document.querySelectorAll('.dice-row').forEach(r => r.classList.remove('active-input'));
     const row = document.getElementById(`row-${id}`);
-    if (row) { row.style.backgroundColor = config.color; row.style.color = config.text; }
+    if (row) row.classList.add('active-input');
     updateKeypadTheme(config.color, config.text); updateKpDisplay();
 }
 
-function renderDiceRow(dice, roundData) {
+function renderDiceSection(dice, roundData) {
     const isBlue = dice.id === 'blue';
     const sparkleBtn = isBlue ? `<button id="sparkle-btn" onclick="event.stopPropagation(); toggleSparkle()" class="sparkle-btn-full ${roundData.blueHasSparkle ? 'sparkle-on' : 'sparkle-off'}">${roundData.blueHasSparkle ? 'Sparkle Activated ✨' : 'Add Sparkle?'}</button>` : '';
-    return `<div onclick="setActiveInput('${dice.id}')" id="row-${dice.id}" class="dice-row p-5 rounded-2xl border-l-8 border-transparent cursor-pointer"><div class="flex justify-between items-center"><span class="font-black uppercase tracking-tight">${dice.label}</span><span id="${dice.id}-sum" class="text-3xl font-black">0</span></div><div id="${dice.id}-values" class="flex flex-wrap gap-3 mt-3 min-h-[10px]"></div>${sparkleBtn}</div>`;
+    return `<section id="row-${dice.id}" class="dice-row color-dice-section" style="--die-color:${dice.color};--die-text:${dice.text}"><div class="color-section-heading"><span class="font-black uppercase tracking-tight">${dice.label}</span><span id="${dice.id}-sum" class="color-section-total">0</span></div><div id="${dice.id}-values" class="die-values-list"></div><div class="color-section-actions"><button onclick="openDiePicker('${dice.id}')" class="add-die-btn">+ Die</button>${sparkleBtn}</div></section>`;
 }
+
+const dieChoices = {
+    yellow: [1,2,3,4,5,6,7,8],
+    purple: [1,2,3,4,5,6,7,8,9,10,11,12],
+    blue: [1,2,3,4,5,6,7,8,9,10,11,12],
+    red: [-1,-2,-3,-4,1,2,3,4,5,6,7,8],
+    green: Array.from({length: 20}, (_, i) => i + 1),
+    clear: [1,2,3,4,5,6],
+    pink: [1,2,3,4,5,6,7,8,9,10,11,12],
+    sage: [0,10,20,30,40,50,60,70,80,90]
+};
+let pickerReturnFocus = null;
+function openDiePicker(id) {
+    const die = [...diceConfig, sageDiceConfig].find(d => d.id === id);
+    if (!die || !dieChoices[id]) return;
+    setActiveInput(id);
+    pickerReturnFocus = document.activeElement;
+    const overlay = document.createElement('div');
+    overlay.id = 'die-picker';
+    overlay.className = 'modal-overlay';
+    overlay.onclick = event => { if (event.target === overlay) closeDiePicker(); };
+    overlay.innerHTML = `<div class="die-picker-panel" role="dialog" aria-modal="true" aria-labelledby="die-picker-title" style="--picker-color:${die.color}">
+        <div class="die-picker-header"><h2 id="die-picker-title">${die.label}: Select Number</h2><button onclick="closeDiePicker()" aria-label="Close number picker">×</button></div>
+        <div class="die-picker-grid">${dieChoices[id].map(value => `<button onclick="chooseDieValue('${id}', ${value})">${value >= 0 ? String(value).padStart(2, '0') : value}</button>`).join('')}</div>
+        <button class="die-picker-cancel" onclick="closeDiePicker()">Cancel</button>
+    </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('.die-picker-grid button').focus();
+}
+function closeDiePicker() {
+    document.getElementById('die-picker')?.remove();
+    pickerReturnFocus?.focus();
+    pickerReturnFocus = null;
+}
+function chooseDieValue(id, value) {
+    if (!dieChoices[id]?.includes(value) || !activeGame) return;
+    activeGame.rounds[activeGame.currentRound][id].push(value);
+    updateAllDisplays();
+    saveGame();
+    closeDiePicker();
+}
+document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && document.getElementById('die-picker')) closeDiePicker();
+});
 
 function renderWildCardHtml(w, idx) {
     const color = diceConfig.find(d => d.id === w.target).color;
-    return `<div onclick="setActiveWildInput(${idx})" id="wild-card-${idx}" class="wild-card ${activeInputField === 'wild-'+idx ? 'active-input' : ''}" style="border-left: 8px solid ${color}"><div class="flex justify-between items-start"><span class="text-[10px] font-black uppercase opacity-40">Wild #${idx+1}</span><span class="text-3xl font-black wild-val-display">${w.value || 0}</span></div><div class="color-picker-wheel">${diceConfig.filter(d => d.id !== 'yellow').map(d => `<div onclick="event.stopPropagation(); setWildTarget(${idx}, '${d.id}')" class="wheel-item ${w.target === d.id ? 'selected' : ''}" style="background-color: ${d.color}"></div>`).join('')}</div></div>`;
+    return `<div onclick="setActiveWildInput(${idx})" id="wild-card-${idx}" class="wild-card ${activeInputField === 'wild-' + idx ? 'active-input' : ''}" style="border-left: 8px solid ${color}"><div class="flex justify-between items-start"><span class="text-[10px] font-black uppercase opacity-40">Wild #${idx + 1}</span><span class="text-3xl font-black wild-val-display">${w.value || 0}</span></div><div class="color-picker-wheel">${diceConfig.filter(d => d.id !== 'yellow').map(d => `<div onclick="event.stopPropagation(); setWildTarget(${idx}, '${d.id}')" class="wheel-item ${w.target === d.id ? 'selected' : ''}" style="background-color: ${d.color}"></div>`).join('')}</div></div>`;
 }
 
 // --- Utils & Settings ---
@@ -1278,32 +1243,13 @@ function calculateRoundTotal(round) {
     let total = 0;
     const wildBonuses = {};
     (round.wild || []).forEach(w => { wildBonuses[w.target] = (wildBonuses[w.target] || 0) + (w.value || 0); });
-
-    let redCount = 0;
-    const colorSums = {};
-
-    // Group the normal dice by color 
-    (round.dice || []).forEach(die => {
-        if (die.value !== null && die.color !== null) {
-            colorSums[die.color] = (colorSums[die.color] || 0) + die.value;
-            if (die.color === 'red') redCount++;
-        }
-    });
-
     [...diceConfig.map(d => d.id), 'sage'].forEach(id => {
-        let base = (colorSums[id] || 0) + (wildBonuses[id] || 0);
-        
-        if (id === 'purple') {
-            total += (base * 2);
-        } else if (id === 'blue') {
-            // Find if ANY blue die has a sparkle in this round to trigger the multiplier
-            const hasSparkle = (round.dice || []).some(d => d.color === 'blue' && d.sparkle);
-            total += hasSparkle ? (base * 2) : base; 
-        } else if (id === 'red') {
-            total += (base * redCount);
-        } else {
-            total += base;
-        }
+        const vals = round[id] || [];
+        let base = (vals.reduce((a, b) => a + b, 0)) + (wildBonuses[id] || 0);
+        if (id === 'purple') total += (base * 2);
+        else if (id === 'blue' && round.blueHasSparkle) total += (base * 2);
+        else if (id === 'red') total += (base * vals.length);
+        else total += base;
     });
     return total;
 }
@@ -1312,13 +1258,20 @@ function kpInput(v) { keypadValue += v; updateKpDisplay(); }
 function kpClear() { keypadValue = ''; updateKpDisplay(); }
 function kpToggleNeg() { keypadValue = keypadValue.startsWith('-') ? keypadValue.substring(1) : (keypadValue ? '-' + keypadValue : '-'); updateKpDisplay(); }
 function updateKpDisplay() { const d = document.getElementById('active-input-display'); if (d) d.textContent = keypadValue || (activeInputField ? `Adding to ${activeInputField.toUpperCase()}` : '-'); }
+function kpEnter() {
+    if (!activeInputField || !keypadValue || keypadValue === '-') return;
+    const rd = activeGame.rounds[activeGame.currentRound];
+    if (activeInputField.startsWith('wild-')) rd.wild[parseInt(activeInputField.split('-')[1])].value = parseFloat(keypadValue);
+    else rd[activeInputField].push(parseFloat(keypadValue));
+    kpClear(); updateAllDisplays(); saveGame();
+}
 function removeVal(id, idx) { activeGame.rounds[activeGame.currentRound][id].splice(idx, 1); setActiveInput(id); updateAllDisplays(); saveGame(); }
 function saveGame() { localStorage.setItem('panda_games', JSON.stringify(games)); }
 function setTheme(t) { settings.theme = t; applySettings(); toggleMenu(); showHome(); }
 function toggleMenu() {
     const existing = document.getElementById('menu-overlay');
     if (existing) { existing.remove(); return; }
-     
+
     const menu = document.createElement('div');
     menu.id = 'menu-overlay';
     menu.className = 'fixed inset-0 z-[4000] bg-black/40 backdrop-blur-md flex justify-end animate-fadeIn';
@@ -1365,11 +1318,11 @@ function showSagePopup() {
     document.body.appendChild(overlay);
 }
 
-window.showPodiumPopup = function(rank, score) {
+window.showPodiumPopup = function (rank, score) {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay animate-fadeIn z-[5000]';
     overlay.onclick = () => overlay.remove();
-    
+
     const config = [
         { title: 'CHAMPION', color: 'from-yellow-400 to-yellow-600', text: 'text-yellow-400', medal: '🥇' },
         { title: '2ND PLACE', color: 'from-slate-300 to-slate-500', text: 'text-slate-300', medal: '🥈' },
@@ -1399,7 +1352,7 @@ window.showPodiumPopup = function(rank, score) {
 
 // --- HOST HISTORY LOGIC ---
 
-window.openHistoryListModal = async function() {
+window.openHistoryListModal = async function () {
     const snap = await get(ref(db, `games/${multiplayerConfig.code}`));
     const data = snap.val();
     if (!data || !data.history) return alert("No history available yet.");
@@ -1407,8 +1360,8 @@ window.openHistoryListModal = async function() {
     const overlay = document.createElement('div');
     overlay.id = 'history-list-overlay';
     overlay.className = 'modal-overlay animate-fadeIn z-[6000]';
-    overlay.onclick = (e) => { if(e.target === overlay) overlay.remove(); };
-    
+    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+
     let buttons = Object.keys(data.history).map(roundIdx => `
         <button onclick="viewPastRound(${roundIdx})" class="w-full bg-white/5 text-white py-4 rounded-xl font-black text-sm mb-3 hover:bg-white/10 transition-colors border border-white/10 uppercase tracking-widest">
             Round ${parseInt(roundIdx) + 1}
@@ -1423,7 +1376,7 @@ window.openHistoryListModal = async function() {
     document.body.appendChild(overlay);
 };
 
-window.viewPastRound = async function(roundIdx) {
+window.viewPastRound = async function (roundIdx) {
     const snap = await get(ref(db, `games/${multiplayerConfig.code}`));
     const data = snap.val();
     if (!data || !data.history || !data.history[roundIdx]) return;
@@ -1437,8 +1390,8 @@ window.viewPastRound = async function(roundIdx) {
 
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay animate-fadeIn z-[7000]';
-    overlay.onclick = (e) => { if(e.target === overlay) overlay.remove(); };
-    
+    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+
     overlay.innerHTML = `<div class="action-popup w-[95%] max-w-[400px] h-[85vh] flex flex-col bg-[#0f172a] border border-slate-700 p-6" onclick="event.stopPropagation()">
         <h2 class="text-2xl font-black mb-6 uppercase tracking-tighter text-white text-center">ROUND ${parseInt(roundIdx) + 1} SUMMARY</h2>
         <div class="flex-1 overflow-y-auto text-left space-y-2 pr-2 pb-4">${html}</div>
@@ -1451,22 +1404,22 @@ function generateRoundSummaryHTML(playersData, orderList, targetCount, showGT) {
     const players = Object.values(playersData);
     const totalP = orderList.length;
     const pityDiceCount = getPityDiceCount(targetCount);
-    
+
     const calcPlayers = players.map(p => ({ ...p, orderIndex: getPlayerIndex(p.name, orderList) }));
 
-    const sortedByYellowRaw = [...calcPlayers].sort((a,b) => {
+    const sortedByYellowRaw = [...calcPlayers].sort((a, b) => {
         if (b.yellowScore !== a.yellowScore) return b.yellowScore - a.yellowScore;
-        return a.orderIndex - b.orderIndex; 
+        return a.orderIndex - b.orderIndex;
     });
     const pandaPlayer = sortedByYellowRaw[0];
     const pandaIndex = pandaPlayer ? pandaPlayer.orderIndex : 0;
 
-    const pickingOrder = [...calcPlayers].sort((a,b) => {
+    const pickingOrder = [...calcPlayers].sort((a, b) => {
         if (b.yellowScore !== a.yellowScore) return b.yellowScore - a.yellowScore;
         return getDistanceLeft(pandaIndex, a.orderIndex, totalP) - getDistanceLeft(pandaIndex, b.orderIndex, totalP);
     });
 
-    const pityOrder = [...calcPlayers].sort((a,b) => {
+    const pityOrder = [...calcPlayers].sort((a, b) => {
         if (a.roundScore !== b.roundScore) return a.roundScore - b.roundScore;
         let distA = getDistanceRight(pandaIndex, a.orderIndex, totalP);
         let distB = getDistanceRight(pandaIndex, b.orderIndex, totalP);
@@ -1485,8 +1438,8 @@ function generateRoundSummaryHTML(playersData, orderList, targetCount, showGT) {
         return distA - distB;
     });
 
-    const grandOrder = [...calcPlayers].sort((a,b) => b.grandTotal - a.grandTotal);
-    
+    const grandOrder = [...calcPlayers].sort((a, b) => b.grandTotal - a.grandTotal);
+
     let html = '';
 
     html += `<div class="mb-4"><div class="text-sm font-black uppercase text-yellow-500 tracking-widest mb-1 pl-2">THE PANDA</div>`;
@@ -1497,27 +1450,27 @@ function generateRoundSummaryHTML(playersData, orderList, targetCount, showGT) {
 
     html += `<div class="mb-4"><div class="text-sm font-black uppercase text-pink-500 tracking-widest mb-1 pl-2">PITY DICE (${pityDiceCount})</div>`;
     if (pityList.length > 0) {
-         html += `<div class="grid grid-cols-1 gap-2">`;
-         pityList.forEach(p => { html += `<div class="bg-pink-500/10 border border-pink-500/50 p-3 rounded-xl flex justify-between items-center"><span class="font-bold text-pink-400">${p.name}</span><span class="font-mono text-white text-xs">Round: ${p.roundScore}</span></div>`; });
-         html += `</div>`;
+        html += `<div class="grid grid-cols-1 gap-2">`;
+        pityList.forEach(p => { html += `<div class="bg-pink-500/10 border border-pink-500/50 p-3 rounded-xl flex justify-between items-center"><span class="font-bold text-pink-400">${p.name}</span><span class="font-mono text-white text-xs">Round: ${p.roundScore}</span></div>`; });
+        html += `</div>`;
     } else { html += `<div class="opacity-30 italic pl-2 text-xs">None</div>`; }
     html += `</div>`;
 
     html += `<div class="mb-4"><div class="text-sm font-black uppercase text-slate-400 tracking-widest mb-1 pl-2">TRADES</div>`;
     if (tradeList.length > 0) {
-         html += `<div class="flex flex-wrap gap-2">`;
-         tradeList.forEach(p => { html += `<span class="bg-slate-700/50 border border-slate-600 px-3 py-1 rounded-lg text-xs font-bold text-slate-300">${p.name}</span>`; });
-         html += `</div>`;
+        html += `<div class="flex flex-wrap gap-2">`;
+        tradeList.forEach(p => { html += `<span class="bg-slate-700/50 border border-slate-600 px-3 py-1 rounded-lg text-xs font-bold text-slate-300">${p.name}</span>`; });
+        html += `</div>`;
     } else { html += `<div class="opacity-60 italic pl-2 text-sm text-slate-600">No trades.</div>`; }
     html += `</div>`;
 
     html += `<div class="mb-4"><div class="text-sm font-black uppercase text-blue-400 tracking-widest mb-1 pl-2">PICKING ORDER</div><div class="bg-white/5 rounded-xl border border-white/10 divide-y divide-white/5">`;
-    pickingOrder.forEach((p, i) => { html += `<div class="p-3 flex justify-between items-center"><div class="flex items-center gap-3"><span class="text-sm font-black w-4 text-slate-500">${i+1}</span><span class="font-bold text-sm text-slate-300">${p.name}</span></div><div class="bg-[#fbbf24] text-black px-2 py-0.5 rounded-lg text-xs font-black">${p.yellowScore}</div></div>`; });
+    pickingOrder.forEach((p, i) => { html += `<div class="p-3 flex justify-between items-center"><div class="flex items-center gap-3"><span class="text-sm font-black w-4 text-slate-500">${i + 1}</span><span class="font-bold text-sm text-slate-300">${p.name}</span></div><div class="bg-[#fbbf24] text-black px-2 py-0.5 rounded-lg text-xs font-black">${p.yellowScore}</div></div>`; });
     html += `</div></div>`;
 
-    if (showGT) { 
+    if (showGT) {
         html += `<div class="mb-2"><div class="text-sm font-black uppercase text-green-500 tracking-widest mb-1 pl-2">LEADERBOARD</div><div class="bg-gradient-to-b from-green-900/20 to-transparent rounded-xl border border-green-500/20 divide-y divide-green-500/10">`;
-        grandOrder.forEach((p, i) => { html += `<div class="p-3 flex justify-between items-center"><div class="flex items-center gap-3"><span class="text-[10px] font-black w-4 text-green-700">${i+1}</span><span class="font-bold text-sm text-white">${p.name}</span></div><span class="font-black text-green-500">${p.grandTotal||0}</span></div>`; });
+        grandOrder.forEach((p, i) => { html += `<div class="p-3 flex justify-between items-center"><div class="flex items-center gap-3"><span class="text-[10px] font-black w-4 text-green-700">${i + 1}</span><span class="font-bold text-sm text-white">${p.name}</span></div><span class="font-black text-green-500">${p.grandTotal || 0}</span></div>`; });
         html += `</div></div>`;
     } else {
         html += `<div class="mb-2 text-center text-sm text-slate-500 font-bold italic opacity-50">Family Mode Active (Leaderboard Hidden)</div>`;
